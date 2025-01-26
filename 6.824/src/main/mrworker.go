@@ -2,7 +2,7 @@ package main
 
 //
 // start a worker process, which is implemented
-// in ../mr/worker.go. typically there will be
+// in mit6.824/6.824/src/mr/worker.go. typically there will be
 // multiple worker processes, talking to one master.
 //
 // go run mrworker.go wc.so
@@ -10,7 +10,7 @@ package main
 // Please do not change this file.
 //
 
-import "../mr"
+import "mit6.824/6.824/src/mr"
 import "plugin"
 import "os"
 import "fmt"
@@ -27,10 +27,8 @@ func main() {
 	mr.Worker(mapf, reducef)
 }
 
-//
 // load the application Map and Reduce functions
-// from a plugin file, e.g. ../mrapps/wc.so
-//
+// from a plugin file, e.g. mit6.824/6.824/src/mrapps/wc.so
 func loadPlugin(filename string) (func(string, string) []mr.KeyValue, func(string, []string) string) {
 	p, err := plugin.Open(filename)
 	if err != nil {

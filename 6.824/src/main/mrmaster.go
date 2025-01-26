@@ -2,14 +2,14 @@ package main
 
 //
 // start the master process, which is implemented
-// in ../mr/master.go
+// in mit6.824/6.824/src/mr/master.go
 //
 // go run mrmaster.go pg*.txt
 //
 // Please do not change this file.
 //
 
-import "../mr"
+import "mit6.824/6.824/src/mr"
 import "time"
 import "os"
 import "fmt"

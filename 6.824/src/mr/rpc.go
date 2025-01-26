@@ -6,7 +6,9 @@ package mr
 // remember to capitalize all names.
 //
 
-import "os"
+import (
+	"os"
+)
 import "strconv"
 
 //
@@ -23,7 +25,22 @@ type ExampleReply struct {
 }
 
 // Add your RPC definitions here.
+// worker请求master分配任务的reply标志，worker以此来判断需要进行的操作
+type ReqTaskReplyFlag int
 
+// 枚举worker请求任务的reply标志
+const (
+	TaskGetted    ReqTaskReplyFlag = iota // master给worker分配任务成功
+	WaitPlz                               // 当前阶段暂时没有尚未分配的任务，worker的本次请求获取不到任务
+	FinishAndExit                         // mapreduce工作已全部完成，worker准备退出
+)
+
+type TaskArgs struct {
+}
+type TaskReply struct {
+	Answer ReqTaskReplyFlag
+	Task   Task
+}
 
 // Cook up a unique-ish UNIX-domain socket name
 // in /var/tmp, for the master.
