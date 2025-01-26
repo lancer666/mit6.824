@@ -213,10 +213,13 @@ func (m *Master) server() {
 // main/mrmaster.go calls Done() periodically to find out
 // if the entire job has finished.
 func (m *Master) Done() bool {
-	ret := false
-
 	// Your code here.
-
+	ret := false
+	mu.Lock() // 先加锁，因为master在执行其他过程中也可能正在访问CurrentPhase
+	defer mu.Unlock()
+	if m.CurrentPhase == AllDone {
+		ret = true
+	}
 	return ret
 }
 
@@ -238,7 +241,7 @@ func MakeMaster(files []string, nReduce int) *Master {
 	m.MakeMapTask(files) // 根据files生成Map任务
 
 	m.server()
-	//go m.CrashHandle()
+	go m.CrashHandle()
 	return &m
 }
 
@@ -314,4 +317,38 @@ func (m *Master) UpdateTaskState(args *FinArgs, reply *FinReply) error {
 	// 由于创建任务时map任务和reduce任务被分配的taskId是唯一的，因此可以通过taskId在TaskMap中找到对应的Task
 	m.TaskMap[id].TaskState = Finshed // 将TaskMap中对应的Task状态修改为Finished
 	return nil
+}
+
+// master不能可靠地区分崩溃的工作线程、还活着但由于某种原因而停滞的工作线程和正在执行但速度太慢而无法使用的工作线程。
+// 可以让master等待一段时间（如10s），然后放弃并将任务重新分配给其他worker，在此之后，master应该认为那个worker已经死亡
+func (m *Master) CrashHandle() {
+	for {
+		time.Sleep(time.Second * 2)    // 每2秒做一次判断
+		mu.Lock()                      // 访问master的共享资源先加锁
+		if m.CurrentPhase == AllDone { // 所有任务都完成了就不用再判断crash了
+			mu.Unlock()
+			break
+		}
+
+		for _, task := range m.TaskMap {
+			// Since()函数保留时间值，并用于评估与实际时间的差异
+			// time.Since(t)等价于time.Now().Sub(t)
+			// 当任务处于Working状态持续10s以上时认为crash
+			if task.TaskState == Working && time.Since(task.StartTime) > 10*time.Second {
+				fmt.Printf("Task[%d] is crashed!\n", task.TaskId)
+				// 将该任务重置当作未分配的任务重新加入MapTaskChannel等待分配
+				// StartTime会在任务重新被分配给worker时更新
+				task.TaskState = Waiting // 更新状态为待分配
+				switch task.TaskType {   // 加入对应的channel等待分配给其他worker
+				case MapTask:
+					m.MapTaskChannel <- task
+				case ReduceTask:
+					m.ReduceTaskChannel <- task
+				}
+				delete(m.TaskMap, task.TaskId) // 将crash的任务从TaskMap中删除，等到再分配时添加回来
+				// 这是因为保证TaskMap中只有分配给worker的Task记录（正在执行和已完成），未分配的Task放在channel里
+			}
+		}
+		mu.Unlock()
+	}
 }

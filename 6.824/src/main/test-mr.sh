@@ -1,4 +1,5 @@
 #!/bin/sh
+echo $(pwd)
 
 #
 # basic map-reduce test
@@ -16,12 +17,12 @@ cd mr-tmp || exit 1
 rm -f mr-*
 
 # make sure software is freshly built.
-(cd ../mit6.824/6.824/src/mrapps && go build $RACE -buildmode=plugin wc.go) || exit 1
-(cd ../mit6.824/6.824/src/mrapps && go build $RACE -buildmode=plugin indexer.go) || exit 1
-(cd ../mit6.824/6.824/src/mrapps && go build $RACE -buildmode=plugin mtiming.go) || exit 1
-(cd ../mit6.824/6.824/src/mrapps && go build $RACE -buildmode=plugin rtiming.go) || exit 1
-(cd ../mit6.824/6.824/src/mrapps && go build $RACE -buildmode=plugin crash.go) || exit 1
-(cd ../mit6.824/6.824/src/mrapps && go build $RACE -buildmode=plugin nocrash.go) || exit 1
+(cd ../mrapps && go build $RACE -buildmode=plugin wc.go) || exit 1
+(cd ../mrapps && go build $RACE -buildmode=plugin indexer.go) || exit 1
+(cd ../mrapps && go build $RACE -buildmode=plugin mtiming.go) || exit 1
+(cd ../mrapps && go build $RACE -buildmode=plugin rtiming.go) || exit 1
+(cd ../mrapps && go build $RACE -buildmode=plugin crash.go) || exit 1
+(cd ../mrapps && go build $RACE -buildmode=plugin nocrash.go) || exit 1
 (cd .. && go build $RACE mrmaster.go) || exit 1
 (cd .. && go build $RACE mrworker.go) || exit 1
 (cd .. && go build $RACE mrsequential.go) || exit 1
@@ -31,7 +32,7 @@ failed_any=0
 # first word-count
 
 # generate the correct output
-mit6.824/6.824/src/mrsequential ../mit6.824/6.824/src/mrapps/wc.so ../pg*txt || exit 1
+mit6.824/6.824/src/mrsequential ../mrapps/wc.so ../pg*txt || exit 1
 sort mr-out-0 > mr-correct-wc.txt
 rm -f mr-out*
 
@@ -43,9 +44,9 @@ timeout -k 2s 180s mit6.824/6.824/src/mrmaster ../pg*txt &
 sleep 1
 
 # start multiple workers.
-timeout -k 2s 180s mit6.824/6.824/src/mrworker ../mit6.824/6.824/src/mrapps/wc.so &
-timeout -k 2s 180s mit6.824/6.824/src/mrworker ../mit6.824/6.824/src/mrapps/wc.so &
-timeout -k 2s 180s mit6.824/6.824/src/mrworker ../mit6.824/6.824/src/mrapps/wc.so &
+timeout -k 2s 180s mit6.824/6.824/src/mrworker ../mrapps/wc.so &
+timeout -k 2s 180s mit6.824/6.824/src/mrworker ../mrapps/wc.so &
+timeout -k 2s 180s mit6.824/6.824/src/mrworker ../mrapps/wc.so &
 
 # wait for one of the processes to exit.
 # under bash, this waits for all processes,
@@ -73,7 +74,7 @@ wait ; wait ; wait
 rm -f mr-*
 
 # generate the correct output
-mit6.824/6.824/src/mrsequential ../mit6.824/6.824/src/mrapps/indexer.so ../pg*txt || exit 1
+mit6.824/6.824/src/mrsequential ../mrapps/indexer.so ../pg*txt || exit 1
 sort mr-out-0 > mr-correct-indexer.txt
 rm -f mr-out*
 
@@ -83,8 +84,8 @@ timeout -k 2s 180s mit6.824/6.824/src/mrmaster ../pg*txt &
 sleep 1
 
 # start multiple workers
-timeout -k 2s 180s mit6.824/6.824/src/mrworker ../mit6.824/6.824/src/mrapps/indexer.so &
-timeout -k 2s 180s mit6.824/6.824/src/mrworker ../mit6.824/6.824/src/mrapps/indexer.so
+timeout -k 2s 180s mit6.824/6.824/src/mrworker ../mrapps/indexer.so &
+timeout -k 2s 180s mit6.824/6.824/src/mrworker ../mrapps/indexer.so
 
 sort mr-out* | grep . > mr-indexer-all
 if cmp mr-indexer-all mr-correct-indexer.txt
@@ -106,8 +107,8 @@ rm -f mr-out* mr-worker*
 timeout -k 2s 180s mit6.824/6.824/src/mrmaster ../pg*txt &
 sleep 1
 
-timeout -k 2s 180s mit6.824/6.824/src/mrworker ../mit6.824/6.824/src/mrapps/mtiming.so &
-timeout -k 2s 180s mit6.824/6.824/src/mrworker ../mit6.824/6.824/src/mrapps/mtiming.so
+timeout -k 2s 180s mit6.824/6.824/src/mrworker ../mrapps/mtiming.so &
+timeout -k 2s 180s mit6.824/6.824/src/mrworker ../mrapps/mtiming.so
 
 NT=`cat mr-out* | grep '^times-' | wc -l | sed 's/ //g'`
 if [ "$NT" != "2" ]
@@ -136,8 +137,8 @@ rm -f mr-out* mr-worker*
 timeout -k 2s 180s mit6.824/6.824/src/mrmaster ../pg*txt &
 sleep 1
 
-timeout -k 2s 180s mit6.824/6.824/src/mrworker ../mit6.824/6.824/src/mrapps/rtiming.so &
-timeout -k 2s 180s mit6.824/6.824/src/mrworker ../mit6.824/6.824/src/mrapps/rtiming.so
+timeout -k 2s 180s mit6.824/6.824/src/mrworker ../mrapps/rtiming.so &
+timeout -k 2s 180s mit6.824/6.824/src/mrworker ../mrapps/rtiming.so
 
 NT=`cat mr-out* | grep '^[a-z] 2' | wc -l | sed 's/ //g'`
 if [ "$NT" -lt "2" ]
@@ -153,7 +154,7 @@ wait ; wait
 
 
 # generate the correct output
-mit6.824/6.824/src/mrsequential ../mit6.824/6.824/src/mrapps/nocrash.so ../pg*txt || exit 1
+mit6.824/6.824/src/mrsequential ../mrapps/nocrash.so ../pg*txt || exit 1
 sort mr-out-0 > mr-correct-crash.txt
 rm -f mr-out*
 
@@ -164,26 +165,26 @@ rm -f mr-done
 sleep 1
 
 # start multiple workers
-timeout -k 2s 180s mit6.824/6.824/src/mrworker ../mit6.824/6.824/src/mrapps/crash.so &
+timeout -k 2s 180s mit6.824/6.824/src/mrworker ../mrapps/crash.so &
 
 # mimic rpc.go's masterSock()
 SOCKNAME=/var/tmp/824-mr-`id -u`
 
 ( while [ -e $SOCKNAME -a ! -f mr-done ]
   do
-    timeout -k 2s 180s mit6.824/6.824/src/mrworker ../mit6.824/6.824/src/mrapps/crash.so
+    timeout -k 2s 180s mit6.824/6.824/src/mrworker ../mrapps/crash.so
     sleep 1
   done ) &
 
 ( while [ -e $SOCKNAME -a ! -f mr-done ]
   do
-    timeout -k 2s 180s mit6.824/6.824/src/mrworker ../mit6.824/6.824/src/mrapps/crash.so
+    timeout -k 2s 180s mit6.824/6.824/src/mrworker ../mrapps/crash.so
     sleep 1
   done ) &
 
 while [ -e $SOCKNAME -a ! -f mr-done ]
 do
-  timeout -k 2s 180s mit6.824/6.824/src/mrworker ../mit6.824/6.824/src/mrapps/crash.so
+  timeout -k 2s 180s mit6.824/6.824/src/mrworker ../mrapps/crash.so
   sleep 1
 done
 
