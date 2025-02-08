@@ -36,7 +36,9 @@ const (
 )
 
 type TaskArgs struct {
+	Answer ReqTaskReplyFlag
 }
+
 type TaskReply struct {
 	Answer ReqTaskReplyFlag
 	Task   Task

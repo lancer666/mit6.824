@@ -10,7 +10,7 @@ package main
 // Please do not change this file.
 //
 
-import "mit6.824/6.824/src/mr"
+import "../mr"
 import "plugin"
 import "os"
 import "fmt"
