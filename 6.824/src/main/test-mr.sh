@@ -32,21 +32,21 @@ failed_any=0
 # first word-count
 
 # generate the correct output
-/home/wangshiwei/mit_6.824/mit6.824/6.824/src/main/mrsequential /home/wangshiwei/mit_6.824/6.824/src/mrapps/wc.so ../pg*txt || exit 1
+/home/wangshiwei/mit_6.824/6.824/src/main/mrsequential /home/wangshiwei/mit_6.824/6.824/src/mrapps/wc.so ../pg*txt || exit 1
 sort mr-out-0 > mr-correct-wc.txt
 rm -f mr-out*
 
 echo '***' Starting wc test.
 
-timeout -k 2s 180s /home/wangshiwei/mit_6.824/mit6.824/6.824/src/main/mrmaster ../pg*txt &
+timeout -k 2s 180s /home/wangshiwei/mit_6.824/6.824/src/main/mrmaster ../pg*txt &
 
 # give the master time to create the sockets.
 sleep 1
 
 # start multiple workers.
-timeout -k 2s 180s /home/wangshiwei/mit_6.824/mit6.824/6.824/src/main/mrworker /home/wangshiwei/mit_6.824/6.824/src/mrapps/wc.so &
-timeout -k 2s 180s /home/wangshiwei/mit_6.824/mit6.824/6.824/src/main/mrworker /home/wangshiwei/mit_6.824/6.824/src/mrapps/wc.so &
-timeout -k 2s 180s /home/wangshiwei/mit_6.824/mit6.824/6.824/src/main/mrworker /home/wangshiwei/mit_6.824/6.824/src/mrapps/wc.so &
+timeout -k 2s 180s /home/wangshiwei/mit_6.824/6.824/src/main/mrworker /home/wangshiwei/mit_6.824/6.824/src/mrapps/wc.so &
+timeout -k 2s 180s /home/wangshiwei/mit_6.824/6.824/src/main/mrworker /home/wangshiwei/mit_6.824/6.824/src/mrapps/wc.so &
+timeout -k 2s 180s /home/wangshiwei/mit_6.824/6.824/src/main/mrworker /home/wangshiwei/mit_6.824/6.824/src/mrapps/wc.so &
 
 # wait for one of the processes to exit.
 # under bash, this waits for all processes,
@@ -74,18 +74,18 @@ wait ; wait ; wait
 rm -f mr-*
 
 # generate the correct output
-mit6.824/6.824/src/main/mrsequential /home/wangshiwei/mit_6.824/6.824/src/mrapps/indexer.so ../pg*txt || exit 1
+/home/wangshiwei/mit_6.824/6.824/src/main/mrsequential /home/wangshiwei/mit_6.824/6.824/src/mrapps/indexer.so ../pg*txt || exit 1
 sort mr-out-0 > mr-correct-indexer.txt
 rm -f mr-out*
 
 echo '***' Starting indexer test.
 
-timeout -k 2s 180s /home/wangshiwei/mit_6.824/mit6.824/6.824/src/main/mrmaster ../pg*txt &
+timeout -k 2s 180s /home/wangshiwei/mit_6.824/6.824/src/main/mrmaster ../pg*txt &
 sleep 1
 
 # start multiple workers
-timeout -k 2s 180s /home/wangshiwei/mit_6.824/mit6.824/6.824/src/main/mrworker /home/wangshiwei/mit_6.824/6.824/src/mrapps/indexer.so &
-timeout -k 2s 180s /home/wangshiwei/mit_6.824/mit6.824/6.824/src/main/mrworker /home/wangshiwei/mit_6.824/6.824/src/mrapps/indexer.so
+timeout -k 2s 180s /home/wangshiwei/mit_6.824/6.824/src/main/mrworker /home/wangshiwei/mit_6.824/6.824/src/mrapps/indexer.so &
+timeout -k 2s 180s /home/wangshiwei/mit_6.824/6.824/src/main/mrworker /home/wangshiwei/mit_6.824/6.824/src/mrapps/indexer.so
 
 sort mr-out* | grep . > mr-indexer-all
 if cmp mr-indexer-all mr-correct-indexer.txt
@@ -104,11 +104,11 @@ echo '***' Starting map parallelism test.
 
 rm -f mr-out* mr-worker*
 
-timeout -k 2s 180s /home/wangshiwei/mit_6.824/mit6.824/6.824/src/main/mrmaster ../pg*txt &
+timeout -k 2s 180s /home/wangshiwei/mit_6.824/6.824/src/main/mrmaster ../pg*txt &
 sleep 1
 
-timeout -k 2s 180s /home/wangshiwei/mit_6.824/mit6.824/6.824/src/main/mrworker /home/wangshiwei/mit_6.824/6.824/src/mrapps/mtiming.so &
-timeout -k 2s 180s /home/wangshiwei/mit_6.824/mit6.824/6.824/src/main/mrworker /home/wangshiwei/mit_6.824/6.824/src/mrapps/mtiming.so
+timeout -k 2s 180s /home/wangshiwei/mit_6.824/6.824/src/main/mrworker /home/wangshiwei/mit_6.824/6.824/src/mrapps/mtiming.so &
+timeout -k 2s 180s /home/wangshiwei/mit_6.824/6.824/src/main/mrworker /home/wangshiwei/mit_6.824/6.824/src/mrapps/mtiming.so
 
 NT=`cat mr-out* | grep '^times-' | wc -l | sed 's/ //g'`
 if [ "$NT" != "2" ]
@@ -134,11 +134,11 @@ echo '***' Starting reduce parallelism test.
 
 rm -f mr-out* mr-worker*
 
-timeout -k 2s 180s /home/wangshiwei/mit_6.824/mit6.824/6.824/src/main/mrmaster ../pg*txt &
+timeout -k 2s 180s /home/wangshiwei/mit_6.824/6.824/src/main/mrmaster ../pg*txt &
 sleep 1
 
-timeout -k 2s 180s /home/wangshiwei/mit_6.824/mit6.824/6.824/src/main/mrworker /home/wangshiwei/mit_6.824/6.824/src/mrapps/rtiming.so &
-timeout -k 2s 180s /home/wangshiwei/mit_6.824/mit6.824/6.824/src/main/mrworker /home/wangshiwei/mit_6.824/6.824/src/mrapps/rtiming.so
+timeout -k 2s 180s /home/wangshiwei/mit_6.824/6.824/src/main/mrworker /home/wangshiwei/mit_6.824/6.824/src/mrapps/rtiming.so &
+timeout -k 2s 180s /home/wangshiwei/mit_6.824/6.824/src/main/mrworker /home/wangshiwei/mit_6.824/6.824/src/mrapps/rtiming.so
 
 NT=`cat mr-out* | grep '^[a-z] 2' | wc -l | sed 's/ //g'`
 if [ "$NT" -lt "2" ]
@@ -154,37 +154,37 @@ wait ; wait
 
 
 # generate the correct output
-mit6.824/6.824/src/main/mrsequential /home/wangshiwei/mit_6.824/6.824/src/mrapps/nocrash.so ../pg*txt || exit 1
+/home/wangshiwei/mit_6.824/6.824/src/main/mrsequential /home/wangshiwei/mit_6.824/6.824/src/mrapps/nocrash.so ../pg*txt || exit 1
 sort mr-out-0 > mr-correct-crash.txt
 rm -f mr-out*
 
 echo '***' Starting crash test.
 
 rm -f mr-done
-(timeout -k 2s 180s /home/wangshiwei/mit_6.824/mit6.824/6.824/src/main/mrmaster ../pg*txt ; touch mr-done ) &
+(timeout -k 2s 180s /home/wangshiwei/mit_6.824/6.824/src/main/mrmaster ../pg*txt ; touch mr-done ) &
 sleep 1
 
 # start multiple workers
-timeout -k 2s 180s /home/wangshiwei/mit_6.824/mit6.824/6.824/src/main/mrworker /home/wangshiwei/mit_6.824/6.824/src/mrapps/crash.so &
+timeout -k 2s 180s /home/wangshiwei/mit_6.824/6.824/src/main/mrworker /home/wangshiwei/mit_6.824/6.824/src/mrapps/crash.so &
 
 # mimic rpc.go's masterSock()
 SOCKNAME=/var/tmp/824-mr-`id -u`
 
 ( while [ -e $SOCKNAME -a ! -f mr-done ]
   do
-    timeout -k 2s 180s /home/wangshiwei/mit_6.824/mit6.824/6.824/src/main/mrworker /home/wangshiwei/mit_6.824/6.824/src/mrapps/crash.so
+    timeout -k 2s 180s /home/wangshiwei/mit_6.824/6.824/src/main/mrworker /home/wangshiwei/mit_6.824/6.824/src/mrapps/crash.so
     sleep 1
   done ) &
 
 ( while [ -e $SOCKNAME -a ! -f mr-done ]
   do
-    timeout -k 2s 180s /home/wangshiwei/mit_6.824/mit6.824/6.824/src/main/mrworker /home/wangshiwei/mit_6.824/6.824/src/mrapps/crash.so
+    timeout -k 2s 180s /home/wangshiwei/mit_6.824/6.824/src/main/mrworker /home/wangshiwei/mit_6.824/6.824/src/mrapps/crash.so
     sleep 1
   done ) &
 
 while [ -e $SOCKNAME -a ! -f mr-done ]
 do
-  timeout -k 2s 180s /home/wangshiwei/mit_6.824/mit6.824/6.824/src/main/mrworker /home/wangshiwei/mit_6.824/6.824/src/mrapps/crash.so
+  timeout -k 2s 180s /home/wangshiwei/mit_6.824/6.824/src/main/mrworker /home/wangshiwei/mit_6.824/6.824/src/mrapps/crash.so
   sleep 1
 done
 
