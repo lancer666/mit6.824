@@ -8,6 +8,7 @@ package raft
 // test with the original before submitting.
 //
 
+//import "mit6.824/6.824/src/labrpc"
 import "../labrpc"
 import "log"
 import "sync"
@@ -126,13 +127,11 @@ func (cfg *config) crash1(i int) {
 	}
 }
 
-//
 // start or re-start a Raft.
 // if one already exists, "kill" it first.
 // allocate new outgoing port file names, and a new
 // state persister, to isolate previous instance of
 // this server. since we cannot really kill it.
-//
 func (cfg *config) start1(i int) {
 	cfg.crash1(i)
 
