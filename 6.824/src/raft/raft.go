@@ -18,16 +18,13 @@ package raft
 //
 
 import (
-	"../labgob"
 	"bytes"
+	"mit6.824/6.824/src/labgob"
+	"mit6.824/6.824/src/labrpc"
 	"sync"
+	"sync/atomic"
 	"time"
 )
-import "sync/atomic"
-import "../labrpc"
-
-// import "bytes"
-// import "../labgob"
 
 // raft server的当前状态
 type ServerState int
@@ -103,6 +100,21 @@ type Raft struct {
 	passiveSnapshotting bool // 该raft server正在进行被动快照的标志（若为true则这期间不进行主动快照）
 	activeSnapshotting  bool // 该raft server正在进行主动快照的标志（若为true则这期间不进行被动快照）
 
+}
+
+// leader向follower发送快照的RPC请求结构
+type InstallSnapshotArgs struct {
+	Term              int    // leader的任期
+	LeaderId          int    // 便于follower将client重定向到leader
+	LastIncludedIndex int    // 快照替换的最后一个条目的index
+	LastIncludedTerm  int    // 快照替换的最后一个条目的term
+	SnapshotData      []byte // 快照的数据
+}
+
+// leader向follower发送快照的RPC回复结构
+type InstallSnapshotReply struct {
+	Term   int  // RPC接收server的current term，leader更新自己用（如果需要的话）
+	Accept bool // follower是否接受这个快照
 }
 
 // return currentTerm and whether this server
@@ -186,8 +198,8 @@ func (rf *Raft) readPersist(data []byte) {
 		rf.votedFor = votedFor
 		rf.log = log
 
-		//rf.lastIncludedIndex = lastIncludedIndex
-		//rf.lastIncludedTerm = lastIncludedTerm
+		rf.lastIncludedIndex = lastIncludedIndex
+		rf.lastIncludedTerm = lastIncludedTerm
 	}
 }
 
@@ -402,13 +414,13 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	// time.Duration(x) 是进行的类型转换，把整型x转换成了time.Duration类型
 	rf.timer = time.NewTimer(time.Duration(getRandMS(300, 500)) * time.Millisecond)
 
-	//rf.lastIncludedIndex = 0
-	//rf.lastIncludedTerm = -1
-	//
-	//rf.passiveSnapshotting = false
-	//rf.activeSnapshotting = false
+	rf.lastIncludedIndex = 0
+	rf.lastIncludedTerm = -1
 
-	// initialize from state persisted before a crash
+	rf.passiveSnapshotting = false
+	rf.activeSnapshotting = false
+
+	//initialize from state persisted before a crash
 	// 从crash中恢复之前的状态
 	rf.readPersist(persister.ReadRaftState())
 	rf.recoverFromSnap(persister.ReadSnapshot()) // 从快照中恢复
@@ -428,4 +440,277 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.readPersist(persister.ReadRaftState())
 
 	return rf
+}
+
+// 由kvserver调用，获取rf.passiveSnapshotting标志，若其为false，则设activeSnapshotting为true
+func (rf *Raft) GetPassiveFlagAndSetActiveFlag() bool {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	if !rf.passiveSnapshotting {
+		rf.activeSnapshotting = true // 若没有进行被动快照则将主动快照进行标志设为true，以便后续的主动快照检查
+	}
+	return rf.passiveSnapshotting
+}
+
+// 返回raft state size的字节数
+func (rf *Raft) GetRaftStateSize() int {
+	return rf.persister.RaftStateSize()
+}
+
+// 由kvserver调用修改rf.activeSnapshotting
+func (rf *Raft) SetActiveSnapshottingFlag(flag bool) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	rf.activeSnapshotting = flag
+}
+
+// raft层接收对应kvserver传来的快照将包含的最后一个index以及快照数据并进行快照
+// leader or follower都可以主动快照
+func (rf *Raft) Snapshot(index int, snapshot []byte) {
+	rf.mu.Lock()
+
+	// 如果主动快照的index不大于rf之前的lastIncludedIndex（这次快照其实是重复或更旧的），则不应用该快照
+	if index <= rf.lastIncludedIndex {
+		DPrintf("Server %d refuse this positive snapshot.\n", rf.me)
+		rf.mu.Unlock()
+		return
+	}
+
+	DPrintf("Server %d start to positively snapshot(rf.lastIncluded=%v, snapshotIndex=%v).\n", rf.me, rf.lastIncludedIndex, index)
+
+	// 修剪log[]，将index及以前的日志条目剪掉
+	var newLog = []LogEntry{{Term: rf.log[index-rf.lastIncludedIndex].Term, Index: index}} // 裁剪后依然log索引0处用一个占位entry，不实际使用
+	newLog = append(newLog, rf.log[index-rf.lastIncludedIndex+1:]...)                      // 这样可以避免原log底层数组由于有部分在被引用而无法将剪掉的部分GC（真正释放）
+	rf.log = newLog
+	rf.lastIncludedIndex = newLog[0].Index
+	rf.lastIncludedTerm = newLog[0].Term
+	// 主动快照时lastApplied、commitIndex一定在snapshotIndex之后，因此不用更新
+
+	// 通过persister进行持久化存储
+	rf.persist() // 先持久化raft state（因为rf.log，rf.lastIncludedIndex，rf.lastIncludedTerm改变了）
+	state := rf.persister.ReadRaftState()
+	rf.persister.SaveStateAndSnapshot(state, snapshot)
+
+	isLeader := (rf.state == Leader)
+	rf.mu.Unlock()
+
+	// leader通过InstallSnapshot RPC将本次的SnapShot信息发送给其他Follower
+	if isLeader {
+		for i, _ := range rf.peers {
+			if i == rf.me {
+				continue
+			}
+			go rf.LeaderSendSnapshot(i, snapshot)
+		}
+	}
+	return
+}
+
+// leader发送SnapShot信息给落后的Follower
+// idx是要发送给的follower的序号
+func (rf *Raft) LeaderSendSnapshot(idx int, snapshotData []byte) {
+	rf.mu.Lock()
+	sameTerm := rf.currentTerm // 记录rf.currentTerm的副本，在goroutine中发送RPC时使用相同的term
+	rf.mu.Unlock()
+
+	// leader向follower[idx]发送InstallSnapshot RPC
+
+	if rf.killed() { // 如果在发送InstallSnapshot RPC过程中leader被kill了就直接结束
+		return
+	}
+
+	rf.mu.Lock()
+
+	// 发送RPC之前先判断，如果自己不再是leader了则直接返回
+	if rf.state != Leader {
+		rf.mu.Unlock()
+		return
+	}
+
+	args := InstallSnapshotArgs{
+		Term:              sameTerm,
+		LeaderId:          rf.me,
+		LastIncludedIndex: rf.lastIncludedIndex,
+		LastIncludedTerm:  rf.lastIncludedTerm,
+		SnapshotData:      snapshotData,
+	}
+	rf.mu.Unlock()
+	reply := InstallSnapshotReply{}
+
+	DPrintf("Leader %d sends InstallSnapshot RPC(term:%d, LastIncludedIndex:%d, LastIncludedTerm:%d) to server %d...\n",
+		rf.me, sameTerm, args.LastIncludedIndex, args.LastIncludedTerm, idx)
+	// 注意传的是args和reply的地址而不是结构体本身！
+	ok := rf.sendSnapshot(idx, &args, &reply) // leader向 server idx 发送InstallSnapshot RPC
+
+	if !ok {
+		DPrintf("Leader %d calls server %d for InstallSnapshot failed!\n", rf.me, idx)
+		// 如果由于网络原因或者follower故障等收不到RPC回复
+		return
+	}
+
+	// 如果leader收到比自己任期更大的server的回复，则leader更新自己的任期并转为follower，跟随此server
+	rf.mu.Lock() //要整体加锁，不能只给if加锁然后解锁
+	defer rf.mu.Unlock()
+
+	// 处理RPC回复之前先判断，如果自己不再是leader了则直接返回
+	// 防止任期混淆（当收到旧任期的RPC回复，比较当前任期和原始RPC中发送的任期，如果两者不同，则放弃回复并返回）
+	if rf.state != Leader || rf.currentTerm != args.Term {
+		return
+	}
+
+	if rf.currentTerm < reply.Term {
+		rf.votedFor = -1            // 当term发生变化时，需要重置votedFor
+		rf.state = Follower         // 变回Follower
+		rf.currentTerm = reply.Term // 更新自己的term为较新的值
+		rf.persist()
+		return // 这里只是退出了协程
+	}
+
+	// 若follower接受了leader的快照则leader需要更新对应的matchIndex和nextIndex等（也得保证递增性，不能回退）
+	if reply.Accept {
+		possibleMatchIdx := args.LastIncludedIndex
+		rf.matchIndex[idx] = max(possibleMatchIdx, rf.matchIndex[idx]) // 保证matchIndex单调递增，因为不可靠网络下会出现RPC延迟
+		rf.nextIndex[idx] = rf.matchIndex[idx] + 1                     // matchIndex安全则nextIndex这样也安全
+	}
+
+}
+
+// 由leader调用，向其他servers发送快照
+// 入参server是目的server在rf.peers[]中的索引（id）
+func (rf *Raft) sendSnapshot(server int, args *InstallSnapshotArgs, reply *InstallSnapshotReply) bool {
+	ok := rf.peers[server].Call("Raft.CondInstallSnap", args, reply) // 调用对应server的Raft.GetSnapshot方法安装日志
+	return ok
+}
+
+// 被动快照
+// follower接收leader发来的InstallSnapshot RPC的handler
+func (rf *Raft) CondInstallSnap(args *InstallSnapshotArgs, reply *InstallSnapshotReply) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	// Figure 13 rules[1]
+	if args.Term < rf.currentTerm {
+		reply.Term = rf.currentTerm
+		reply.Accept = false
+		return
+	}
+
+	// 接受leader的被动快照前先检查该server是否正在进行主动快照，若是则本次被动快照取消
+	// 避免主、被动快照重叠应用导致上层kvserver状态与下层raft日志不一致
+	if rf.activeSnapshotting {
+		reply.Term = rf.currentTerm
+		reply.Accept = false
+		return
+	}
+
+	wasLeader := (rf.state == Leader) // 标志rf曾经是leader
+
+	if args.Term > rf.currentTerm {
+		rf.votedFor = -1           // 当term发生变化时，需要重置votedFor
+		rf.currentTerm = args.Term // 更新自己的term为较新的值
+		rf.persist()
+	}
+
+	rf.state = Follower         // 变回或维持Follower
+	rf.leaderId = args.LeaderId // 将rpc携带的leaderId设为自己的leaderId，记录最近的leader（client寻找leader失败时用到）
+
+	// 如果follower的term与leader的term相等（大多数情况），那么follower收到AppendEntries RPC后也需要重置计时器
+	rf.timer.Stop()
+	rf.timer.Reset(time.Duration(getRandMS(300, 500)) * time.Millisecond)
+
+	if wasLeader { // 如果是leader收到AppendEntries RPC（虽然概率很小）
+		go rf.HandleTimeout() // 如果是leader重回follower则要重新循环进行超时检测
+	}
+
+	snapshotIndex := args.LastIncludedIndex
+	snapshotTerm := args.LastIncludedTerm
+	reply.Term = rf.currentTerm
+
+	if snapshotIndex <= rf.lastIncludedIndex { // 说明snapshotIndex之前的log已经做成snapshot并删除了
+		DPrintf("Server %d refuse the snapshot from leader.\n", rf.me)
+		reply.Accept = false
+		return
+	}
+
+	var newLog []LogEntry
+
+	// 如果leader传来的快照比本地的快照更新
+
+	rf.lastApplied = args.LastIncludedIndex // 下一条指令直接从快照后开始（重新）apply
+
+	if snapshotIndex < rf.log[len(rf.log)-1].Index { // 若应用此次快照，本地还有日志要接上
+		// 若快照和本地日志在snapshotIndex索引处的日志term不一致，则扔掉本地快照后的所有日志
+		if rf.log[snapshotIndex-rf.lastIncludedIndex].Term != snapshotTerm {
+			newLog = []LogEntry{{Term: snapshotTerm, Index: snapshotIndex}}
+			rf.commitIndex = args.LastIncludedIndex // 由于后面被截断的日志无效，故等重新计算commitIndex
+		} else { // 若term没冲突，则在snapshotIndex处截断并保留后续日志
+			newLog = []LogEntry{{Term: snapshotTerm, Index: snapshotIndex}}
+			newLog = append(newLog, rf.log[snapshotIndex-rf.lastIncludedIndex+1:]...)
+			rf.commitIndex = max(rf.commitIndex, args.LastIncludedIndex) // 后面日志有效则保证commit不回退
+		}
+	} else { // 若此快照比本地日志还要长，则应用后日志就清空了
+		newLog = []LogEntry{{Term: snapshotTerm, Index: snapshotIndex}}
+		rf.commitIndex = args.LastIncludedIndex
+	}
+
+	// 更新相关变量
+	rf.lastIncludedIndex = args.LastIncludedIndex
+	rf.lastIncludedTerm = args.LastIncludedTerm
+	rf.log = newLog
+	rf.passiveSnapshotting = true
+
+	// 通过persister进行持久化存储
+	rf.persist()                                                                       // 先持久化raft state（因为rf.log，rf.lastIncludedIndex，rf.lastIncludedTerm改变了）
+	rf.persister.SaveStateAndSnapshot(rf.persister.ReadRaftState(), args.SnapshotData) // 持久化raft state及快照
+
+	// 向kvserver发送带快照的ApplyMsg通知它安装
+	rf.InstallSnapFromLeader(snapshotIndex, args.SnapshotData)
+
+	DPrintf("Server %d accept the snapshot from leader(lastIncludedIndex=%v, lastIncludedTerm=%v).\n", rf.me, rf.lastIncludedIndex, rf.lastIncludedTerm)
+	reply.Accept = true
+	return
+}
+
+// 如果接受，则follower将leader发来的快照发到applyCh便于状态机安装
+func (rf *Raft) InstallSnapFromLeader(snapshotIndex int, snapshotData []byte) {
+	// follower接收到leader发来的InstallSnapshot RPC后先不要安装快照，而是发给状态机，判断为较新的快照时raft层才进行快照
+	snapshotMsg := ApplyMsg{
+		SnapshotValid:     true,
+		CommandValid:      false,
+		SnapshotIndex:     snapshotIndex,
+		StateMachineState: snapshotData, // sm_state
+	}
+
+	rf.applyCh <- snapshotMsg // 将包含快照的ApplyMsg发送到applyCh，等待状态机处理
+	DPrintf("Server %d send SnapshotMsg(snapIndex=%v) to ApplyCh.\n", rf.me, snapshotIndex)
+
+}
+
+// 由kvserver调用修改rf.passiveSnapshotting
+func (rf *Raft) SetPassiveSnapshottingFlag(flag bool) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	rf.passiveSnapshotting = flag
+}
+
+func (rf *Raft) recoverFromSnap(snapshot []byte) {
+	if snapshot == nil || len(snapshot) < 1 { // 如果没有快照则直接返回
+		return
+	}
+
+	rf.lastApplied = rf.lastIncludedIndex
+	rf.commitIndex = rf.lastIncludedIndex
+
+	// raft恢复后向kvserver发送快照
+	snapshotMsg := ApplyMsg{
+		SnapshotValid:     true,
+		CommandValid:      false,
+		SnapshotIndex:     rf.lastIncludedIndex,
+		StateMachineState: snapshot, // sm_state
+	}
+
+	go func(msg ApplyMsg) {
+		rf.applyCh <- msg // 将包含快照的ApplyMsg发送到applyCh，等待状态机处理
+	}(snapshotMsg)
+
+	DPrintf("Server %d recover from crash and send SnapshotMsg to ApplyCh.\n", rf.me)
 }

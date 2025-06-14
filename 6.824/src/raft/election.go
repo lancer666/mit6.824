@@ -86,7 +86,6 @@ func (rf *Raft) RunForElection() {
 	finished := 1                 // 收到的请求投票回复数（自己的票也算）
 	var voteMu sync.Mutex         // 用于保护votes和finished的锁
 	cond := sync.NewCond(&voteMu) // 将条件变量与锁关联
-
 	// candidate向除自己以外的其他server发送请求投票RPC
 	for i, _ := range rf.peers { // i是目的server在rf.peers[]中的索引（id）
 
@@ -285,11 +284,11 @@ func (rf *Raft) LeaderAppendEntries() {
 			appendLogs := []LogEntry{} // 若为心跳包则要追加的日志条目为空切片
 			nextIdx := rf.nextIndex[idx]
 
-			//if nextIdx <= rf.lastIncludedIndex { // 如果要追加的日志已经被截断了则向该follower发送快照
-			//	go rf.LeaderSendSnapshot(idx, rf.persister.ReadSnapshot())
-			//	rf.mu.Unlock()
-			//	return
-			//}
+			if nextIdx <= rf.lastIncludedIndex { // 如果要追加的日志已经被截断了则向该follower发送快照
+				go rf.LeaderSendSnapshot(idx, rf.persister.ReadSnapshot())
+				rf.mu.Unlock()
+				return
+			}
 
 			// 根据Figure2的Leader Rule 3
 			// If last log index ≥ nextIndex for a follower: send AppendEntries RPC with log entries starting at nextIndex
